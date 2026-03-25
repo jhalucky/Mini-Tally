@@ -34,8 +34,8 @@
 }
 
 .invoice-page {
-  width: 794px;
-  height: 1123px;
+  width: 794px !important;
+  height: 1123px !important;
   margin: 0 auto; /* 🔥 CENTER HORIZONTALLY */
   padding: 24px;
   box-sizing: border-box;

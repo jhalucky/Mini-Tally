@@ -1,6 +1,5 @@
 import React from "react";
 import jsPDF from "jspdf";
-import html2canvas from "html2canvas";
 import { numberToWords } from "../utils/amountToWords";
 import { COMPANY } from "../data/items";
 
@@ -17,20 +16,168 @@ export default function Invoice({ bill, onClose }) {
   const igst = gstType === "igst" ? gstAmount : 0;
   const grandTotal = subtotal + gstAmount;
 
-  const handleDownloadPDF = async () => {
-    const pages = document.querySelectorAll(".invoice-page");
-    const pdf = new jsPDF("p", "px", [794, 1123]);
 
-    for (let i = 0; i < pages.length; i++) {
-      const canvas = await html2canvas(pages[i], { scale: 2 });
-      const imgData = canvas.toDataURL("image/png");
+const handleDownloadPDF = () => {
+  const pdf = new jsPDF("p", "mm", "a4");
 
-      if (i !== 0) pdf.addPage();
-      pdf.addImage(imgData, "PNG", 0, 0, 794, 1123);
+  const margin = 10;
+  const pageWidth = 210;
+  let y = 10;
+
+  const line = () => {
+    pdf.line(margin, y, pageWidth - margin, y);
+    y += 4;
+  };
+
+  const rightText = (text, yPos) => {
+    pdf.text(text, pageWidth - margin, yPos, { align: "right" });
+  };
+
+  const drawInvoice = (title) => {
+    y = 10;
+
+    // TITLE
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(12);
+    pdf.text(title, pageWidth / 2, y, { align: "center" });
+    y += 6;
+
+    // COMPANY
+    pdf.setFontSize(14);
+    pdf.text("PC Labels", margin, y);
+    y += 5;
+
+    pdf.setFont("helvetica", "normal");
+    pdf.setFontSize(10);
+    pdf.text("Z-32, Okhla Industrial Area, Phase 2, New Delhi", margin, y);
+    y += 4;
+    pdf.text("GSTIN: 07AABCS1429B1Z1", margin, y);
+
+    // INVOICE INFO
+    rightText(`Invoice No: ${billNumber}`, y - 4);
+    rightText(`Date: ${date}`, y);
+
+    y += 6;
+    line();
+
+    // CLIENT BOX
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Bill To:", margin, y);
+    y += 5;
+
+    pdf.setFont("helvetica", "normal");
+
+    pdf.text(client?.company || client?.name || "Walk-in Customer", margin, y);
+    y += 4;
+
+    if (client?.gstin) {
+      pdf.text(`GSTIN: ${client.gstin}`, margin, y);
+      y += 4;
     }
 
-    pdf.save(`Invoice-${billNumber}.pdf`);
+    if (client?.address) {
+      const splitAddress = pdf.splitTextToSize(client.address, 180);
+      pdf.text(splitAddress, margin, y);
+      y += splitAddress.length * 4;
+    }
+
+    y += 2;
+    line();
+
+    // TABLE HEADER
+    pdf.setFont("helvetica", "bold");
+    pdf.setFontSize(10);
+
+    pdf.text("#", margin, y);
+    pdf.text("Item", margin + 10, y);
+    pdf.text("Qty", margin + 110, y);
+    pdf.text("Rate", margin + 130, y);
+    pdf.text("Amount", margin + 160, y);
+
+    y += 2;
+    line();
+
+    // TABLE ROWS
+    pdf.setFont("helvetica", "normal");
+
+    rows.forEach((r, i) => {
+      const amount = r.qty * r.rate;
+
+      pdf.text(String(i + 1), margin, y);
+
+      const itemText = pdf.splitTextToSize(r.particulars, 90);
+      pdf.text(itemText, margin + 10, y);
+
+      pdf.text(String(r.qty), margin + 110, y, { align: "right" });
+      pdf.text(String(r.rate), margin + 130, y, { align: "right" });
+      pdf.text(`₹${amount.toFixed(2)}`, margin + 180, y, { align: "right" });
+
+      y += itemText.length * 5;
+    });
+
+    y += 2;
+    line();
+
+    // TOTALS
+    pdf.setFont("helvetica", "normal");
+
+    pdf.text("Subtotal:", margin, y);
+    rightText(`₹${subtotal.toFixed(2)}`, y);
+    y += 5;
+
+    if (gstType === "cgst_sgst") {
+      pdf.text("CGST:", margin, y);
+      rightText(`₹${cgst.toFixed(2)}`, y);
+      y += 5;
+
+      pdf.text("SGST:", margin, y);
+      rightText(`₹${sgst.toFixed(2)}`, y);
+      y += 5;
+    } else {
+      pdf.text("IGST:", margin, y);
+      rightText(`₹${igst.toFixed(2)}`, y);
+      y += 5;
+    }
+
+    pdf.setFont("helvetica", "bold");
+    pdf.text("Grand Total:", margin, y);
+    rightText(`₹${grandTotal.toFixed(2)}`, y);
+    y += 6;
+
+    line();
+
+    // AMOUNT IN WORDS
+    pdf.setFont("helvetica", "normal");
+    pdf.text("Amount in Words:", margin, y);
+    y += 4;
+
+    const words = numberToWords(grandTotal);
+    const splitWords = pdf.splitTextToSize(words, 180);
+    pdf.text(splitWords, margin, y);
+    y += splitWords.length * 4 + 4;
+
+    // SIGNATURES
+    pdf.text("Received By:", margin, y + 10);
+    pdf.text("Authorized Signature", pageWidth - margin, y + 10, { align: "right" });
+
+    pdf.line(margin, y + 18, margin + 60, y + 18);
+    pdf.line(pageWidth - margin - 60, y + 18, pageWidth - margin, y + 18);
+
+    // FOOTER
+    y += 25;
+    pdf.setFontSize(8);
+    pdf.text("This is a computer-generated invoice.", margin, y);
   };
+
+  // PAGE 1
+  drawInvoice("CLIENT COPY");
+
+  // PAGE 2
+  pdf.addPage();
+  drawInvoice("OFFICE COPY");
+
+  pdf.save(`Invoice-${billNumber}.pdf`);
+};
 
   const InvoiceContent = ({ title }) => (
     <div className="flex flex-col h-full justify-between">
