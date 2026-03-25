@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+* {
+  font-family: 'IBM Plex Sans', sans-serif;
+}
+
+.mono {
+  font-family: 'IBM Plex Mono', monospace;
+}
+
+/* Print styles - shows invoice for printing */
+@media print {
+  body {
+    margin: 0;
+  }
+
+  .no-print {
+    display: none !important;
+  }
+
+  .page-break {
+    page-break-after: always;
+  }
+
+  #invoice {
+    width: 100%;
+  }
+}
+
+.invoice-container {
+  width: 100%;
+}
+
+.invoice-page {
+  width: 794px;
+  height: 1123px;
+  margin: 0 auto; /* 🔥 CENTER HORIZONTALLY */
+  padding: 24px;
+  box-sizing: border-box;
+  background: white;
+}
+
+.page-break {
+  page-break-after: always;
+}
+
