@@ -217,18 +217,35 @@ export default function Home() {
 
       {/* CLIENT MODAL */}
       {showClientPicker && (
-        <div className="fixed inset-0 bg-black/70 z-50 overflow-y-auto">
-          <div className="min-h-screen flex items-center justify-center px-2">
-            <div className="bg-white w-full max-w-2xl p-3 sm:p-4">
-              <ClientManager
-                selectorMode
-                onSelect={(c) => { setClient(c); setShowClientPicker(false); }}
-                onClose={() => setShowClientPicker(false)}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+  <div className="fixed inset-0 bg-black/70 z-50 overflow-y-auto">
+
+    <div className="min-h-screen flex items-center justify-center px-2">
+
+      <div className="bg-white w-full max-w-2xl p-3 sm:p-4 relative">
+
+        {/* 🔥 CLOSE BUTTON */}
+        <button
+          onClick={() => setShowClientPicker(false)}
+          className="absolute top-2 right-2 text-gray-500 hover:text-black"
+        >
+          ✕
+        </button>
+
+        {/* CONTENT */}
+        <ClientManager
+          selectorMode
+          onSelect={(c) => {
+            setClient(c);
+            setShowClientPicker(false);
+          }}
+          onClose={() => setShowClientPicker(false)}
+        />
+
+      </div>
+
+    </div>
+  </div>
+)}
 
       {/* INVOICE MODAL */}
       {activeBill && (
