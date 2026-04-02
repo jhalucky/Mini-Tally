@@ -38,7 +38,8 @@ export default function InvoiceForm({ rows, setRows, setGSTData }) {
   };
 
   const subtotal = rows.reduce((sum, r) => {
-    return sum + ((parseFloat(r.qty) || 0) * (parseFloat(r.rate) || 0));
+    const qty = r.qty === "" || r.qty === undefined ? 1 : parseFloat(r.qty) || 1;
+    return sum + (qty * (parseFloat(r.rate) || 0));
   }, 0);
 
   const gstAmount = (subtotal * gstRate) / 100;
@@ -80,9 +81,9 @@ export default function InvoiceForm({ rows, setRows, setGSTData }) {
 
           <tbody>
             {rows.map((row, idx) => {
-              const amount =
-                (parseFloat(row.qty) || 0) *
-                (parseFloat(row.rate) || 0);
+              // qty defaults to 1 when left blank — amount = rate if no qty entered
+              const qty = row.qty === "" || row.qty === undefined ? 1 : parseFloat(row.qty) || 1;
+              const amount = qty * (parseFloat(row.rate) || 0);
 
               return (
                 <tr key={row.id} className="border-b">

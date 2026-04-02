@@ -33,9 +33,9 @@ export default function Home() {
 
   const handleGenerateInvoice = () => {
     const filled = rows.filter(
-      r => r.particulars?.trim() && parseFloat(r.qty) > 0 && parseFloat(r.rate) > 0
+      r => r.particulars?.trim() && parseFloat(r.rate) > 0
     );
-    if (filled.length === 0) return alert('Fill at least one row');
+    if (filled.length === 0) return alert('Fill at least one row (particulars and rate required)');
 
     const billNumber = confirmBillNumber();
 
