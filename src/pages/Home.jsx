@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import InvoiceForm, { BLANK_ROW } from '../components/InvoiceForm';
 import Invoice from '../components/Invoice';
-import NonGSTInvoice from '../components/NonGSTInvoice';
+import NonGSTInvoice from '../components/Nongstinvoice';
 import ClientManager from '../components/ClientManager';
 import ProductManager from '../components/ProductManager';
 import { useBillNumber } from '../hooks/useBillNumber';
