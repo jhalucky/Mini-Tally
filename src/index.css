@@ -12,37 +12,22 @@
 
 /* Print styles - shows invoice for printing */
 @media print {
-  body {
-    margin: 0;
+  body * {
+    visibility: hidden;
   }
-
+  #print-area, #print-area * {
+    visibility: visible;
+  }
+  #print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+  }
   .no-print {
     display: none !important;
   }
-
   .page-break {
-    page-break-after: always;
-  }
-
-  #invoice {
-    width: 100%;
+    page-break-before: always;
   }
 }
-
-.invoice-container {
-  width: 100%;
-}
-
-.invoice-page {
-  width: 794px !important;
-  height: 1123px !important;
-  margin: 0 auto; /* 🔥 CENTER HORIZONTALLY */
-  padding: 24px;
-  box-sizing: border-box;
-  background: white;
-}
-
-.page-break {
-  page-break-after: always;
-}
-

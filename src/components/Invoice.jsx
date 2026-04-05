@@ -1,514 +1,725 @@
-/**
- * Invoice.jsx
- * -----------
- * DATA FLOW (matches your InvoiceForm.jsx exactly):
- *   bill.rows     -> [{ particulars, qty, rate }]
- *   bill.gstType  -> 'cgst_sgst' | 'igst'
- *   bill.gstRate  -> number e.g. 18
- *   bill.client   -> client object or null
- *   bill.billNumber, bill.date
- *
- * PDF via jsPDF draws directly to the PDF canvas.
- * Two pages: Page 1 = CLIENT COPY, Page 2 = OFFICE COPY.
- */
-
 import React from "react";
 import jsPDF from "jspdf";
 import { numberToWords } from "../utils/amountToWords";
 import { COMPANY } from "../data/items";
 
-const f2 = (n) => (parseFloat(n) || 0).toFixed(2);
-const Rs = (n) => "Rs. " + f2(n);
+const f2  = (n) => (parseFloat(n) || 0).toFixed(2);
+const fN  = (n) => (parseFloat(n) || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 });
 
 function splitText(pdf, text, maxW) {
   return pdf.splitTextToSize(String(text || ""), maxW);
 }
 
+// Draw a bordered rectangle outline
+function box(pdf, x, y, w, h) {
+  pdf.setDrawColor(0,0,0);
+  pdf.rect(x, y, w, h, "S");
+}
+
+// Draw a cell: bordered rect + text inside
+function cell(pdf, x, y, w, h, text, opts = {}) {
+  box(pdf, x, y, w, h);
+  const {
+    align = "left",
+    bold  = false,
+    size  = 8,
+    pad   = 1.5,
+    valign = "top",
+  } = opts;
+  pdf.setFont("helvetica", bold ? "bold" : "normal");
+  pdf.setFontSize(size);
+  const lines = splitText(pdf, String(text || ""), w - pad * 2);
+  const textX = align === "right" ? x + w - pad : align === "center" ? x + w / 2 : x + pad;
+  const textY = valign === "middle" ? y + h / 2 + size * 0.18 : y + size * 0.35 + pad;
+  pdf.text(lines, textX, textY, { align });
+}
+
+// Horizontal line
+function hLine(pdf, x1, x2, y) {
+  pdf.setDrawColor(0,0,0);
+  pdf.line(x1, y, x2, y);
+}
+
+// Vertical line
+function vLine(pdf, x, y1, y2) {
+  pdf.setDrawColor(0,0,0);
+  pdf.line(x, y1, x, y2);
+}
+
+// ─── MAIN PDF DRAW ────────────────────────────────────────────────────────────
 function drawInvoicePage(pdf, bill, copyLabel) {
   const { billNumber, date, client, rows, gstType, gstRate } = bill;
 
-  const PW = 210;
-  const ML = 10;
-  const MR = 10;
-  const CW = PW - ML - MR;
-  const RX = PW - MR;
-
-  const rt = (txt, y) => pdf.text(String(txt), RX, y, { align: "right" });
-  const hr = (y) => {
-    pdf.setDrawColor(0, 0, 0);
-    pdf.line(ML, y, RX, y);
-  };
-
-  let y = 10;
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(8);
-  rt(copyLabel, y + 4);
-  y += 10;
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(15);
-  pdf.text(COMPANY.name, ML, y);
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(13);
-  rt("TAX INVOICE", y);
-  y += 5;
-
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(8.5);
-  const cLines = [
-    COMPANY.address + ", " + COMPANY.city,
-    "GSTIN: " + COMPANY.gstin + "  |  State: " + COMPANY.state + " (" + COMPANY.stateCode + ")",
-    "Ph: " + COMPANY.phone + "  |  " + COMPANY.email,
-  ];
-  const metaY = y;
-  cLines.forEach((line) => {
-    pdf.text(line, ML, y);
-    y += 4;
-  });
-
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(9);
-  rt("Invoice No: " + billNumber, metaY);
-  rt("Date: " + date, metaY + 5);
-
-  y += 2;
-  hr(y);
-  y += 5;
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(9);
-  pdf.text("Bill To:", ML, y);
-  y += 5;
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(9);
-  pdf.text(client?.company || client?.name || "Walk-in Customer", ML, y);
-  pdf.setFont("helvetica", "normal");
-  y += 4.5;
-
-  if (client?.name && client?.company && client.name !== client.company) {
-    pdf.text(client.name, ML, y);
-    y += 4.5;
-  }
-  if (client?.gstin) {
-    pdf.text("GSTIN: " + client.gstin, ML, y);
-    y += 4.5;
-  }
-  if (client?.address) {
-    const parts = [client.address, client.city, client.state].filter(Boolean).join(", ");
-    const addressLines = splitText(pdf, parts, CW);
-    pdf.text(addressLines, ML, y);
-    y += addressLines.length * 4.5;
-  }
-  if (client?.phone) {
-    pdf.text("Ph: " + client.phone, ML, y);
-    y += 4.5;
-  }
-
-  y += 2;
-  hr(y);
-  y += 5;
+  const PW  = 210;
+  const ML  = 8;
+  const MR  = 8;
+  const RX  = PW - MR;
+  const CW  = RX - ML;
 
   const isIGST = gstType === "igst";
   const gstPct = parseFloat(gstRate) || 0;
 
-  const C = isIGST
-    ? {
-        no: ML,
-        part: ML + 8,
-        qty: 113,
-        rate: 131,
-        amt: 151,
-        igstPct: 167,
-        igstAmt: 183,
-        tot: RX,
-      }
-    : {
-        no: ML,
-        part: ML + 8,
-        qty: 101,
-        rate: 117,
-        amt: 135,
-        cgstPct: 149,
-        cgstAmt: 163,
-        sgstPct: 177,
-        sgstAmt: 191,
-        tot: RX,
-      };
-
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(isIGST ? 8 : 7);
-  pdf.text("#", C.no + 1, y);
-  pdf.text("Particulars", C.part, y);
-  pdf.text("Qty", C.qty, y, { align: "right" });
-  pdf.text("Rate", C.rate, y, { align: "right" });
-  pdf.text("Amount", C.amt, y, { align: "right" });
-
-  if (isIGST) {
-    pdf.text("IGST %", C.igstPct, y, { align: "right" });
-    pdf.text("IGST", C.igstAmt, y, { align: "right" });
-  } else {
-    pdf.text("CGST %", C.cgstPct, y, { align: "right" });
-    pdf.text("CGST", C.cgstAmt, y, { align: "right" });
-    pdf.text("SGST %", C.sgstPct, y, { align: "right" });
-    pdf.text("SGST", C.sgstAmt, y, { align: "right" });
-  }
-  pdf.text("Total", C.tot, y, { align: "right" });
-  y += 4;
-
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(isIGST ? 8.5 : 7.5);
+  // totals
   let subtotal = 0;
-  let tGST1 = 0;
-  let tGST2 = 0;
+  rows.forEach(r => {
+    const qty = r.qty===""||r.qty===undefined ? 1 : parseFloat(r.qty)||1;
+    subtotal += qty * (parseFloat(r.rate)||0);
+  });
+  const gstAmt    = (subtotal * gstPct) / 100;
+  const cgst      = isIGST ? 0 : gstAmt / 2;
+  const sgst      = isIGST ? 0 : gstAmt / 2;
+  const igst      = isIGST ? gstAmt : 0;
+  const grandTotal = subtotal + gstAmt;
+
+  let y = 8;
+
+  // ── TITLE ROW ──────────────────────────────────────────────────────────────
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(13);
+  pdf.text("Tax Invoice", PW/2, y+5, { align:"center" });
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(9);
+  pdf.text("(" + copyLabel + ")", PW/2, y+10, { align:"center" });
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(9);
+  pdf.text("e-Invoice", RX, y+5, { align:"right" });
+  y += 14;
+
+  // outer border of the whole invoice
+  box(pdf, ML, y, CW, 195);
+
+  // ── SUPPLIER BOX (left half of top section) ────────────────────────────────
+  const topH   = 30;
+  const halfW  = CW / 2;
+
+  // supplier box outline
+  box(pdf, ML, y, halfW, topH);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(9.5);
+  pdf.text(COMPANY.name, ML+2, y+5);
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7.5);
+  const supLines = [
+    COMPANY.address,
+    COMPANY.city,
+    "GSTIN/UIN : " + COMPANY.gstin,
+    "State Name : " + COMPANY.state + ",  Code : " + COMPANY.stateCode,
+  ];
+  let sy = y + 9;
+  supLines.forEach(l => { pdf.text(l, ML+2, sy); sy += 3.8; });
+
+  // ── INVOICE META BOX (right half of top section) ──────────────────────────
+  const metaX = ML + halfW;
+  box(pdf, metaX, y, halfW, topH);
+
+  // Invoice No + Date
+  const rowH = topH / 3;
+  // row 1: Invoice No | Dated
+  hLine(pdf, metaX, RX, y + rowH);
+  hLine(pdf, metaX, RX, y + rowH * 2);
+  vLine(pdf, metaX + halfW/2, y, y + topH);
+
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  pdf.text("Invoice No.", metaX+2, y+3.5);
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+  pdf.text(billNumber, metaX+2, y+8);
+
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  pdf.text("Dated", metaX + halfW/2 + 2, y+3.5);
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+  pdf.text(date, metaX + halfW/2 + 2, y+8);
+
+  // row 2: Delivery Note | Mode of Payment
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  pdf.text("Delivery Note", metaX+2, y+rowH+3);
+  pdf.text("Mode/Terms of Payment", metaX+halfW/2+2, y+rowH+3);
+
+  // row 3: Reference No | Other References
+  pdf.text("Reference No. & Date.", metaX+2, y+rowH*2+3);
+  pdf.text("Other References", metaX+halfW/2+2, y+rowH*2+3);
+
+  y += topH;
+
+  // ── CONSIGNEE / BUYER BOXES ───────────────────────────────────────────────
+  const partyH = 32;
+
+  // consignee label
+  box(pdf, ML, y, CW, partyH);
+  vLine(pdf, ML+halfW, y, y+partyH);
+  hLine(pdf, ML, RX, y + 4);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7);
+  pdf.text("Consignee (Ship to)", ML+2, y+3);
+
+  const clientName = client?.company || client?.name || "Walk-in Customer";
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(9);
+  pdf.text(clientName, ML+2, y+9);
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7.5);
+  let cy = y + 14;
+  if (client?.address) { const al = splitText(pdf, client.address, halfW-6); pdf.text(al, ML+2, cy); cy += al.length*3.5; }
+  if (client?.gstin)   { pdf.text("GSTIN/UIN : " + client.gstin, ML+2, cy); cy += 3.5; }
+  if (client?.state)   { pdf.text("State Name : " + client.state + (client.stateCode?",  Code : "+client.stateCode:""), ML+2, cy); }
+
+  // right half: buyer's order / dispatch info
+  const rx2 = ML + halfW;
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  pdf.text("Buyer's Order No.",        rx2+2, y+3);
+  pdf.text("Dated",                    rx2+2, y+9);
+  pdf.text("Dispatch Doc No.",         rx2+2, y+15);
+  pdf.text("Delivery Note Date",       rx2+2, y+21);
+  pdf.text("Dispatched through",       rx2+2, y+27);
+
+  y += partyH;
+
+  // ── BUYER (Bill to) ───────────────────────────────────────────────────────
+  const buyerH = 28;
+  box(pdf, ML, y, CW, buyerH);
+  vLine(pdf, ML+halfW, y, y+buyerH);
+  hLine(pdf, ML, RX, y+4);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7);
+  pdf.text("Buyer (Bill to)", ML+2, y+3);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(9);
+  pdf.text(clientName, ML+2, y+9);
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7.5);
+  let by = y+14;
+  if (client?.address) { const al = splitText(pdf, client.address, halfW-6); pdf.text(al, ML+2, by); by += al.length*3.5; }
+  if (client?.gstin)   { pdf.text("GSTIN/UIN : " + client.gstin, ML+2, by); by += 3.5; }
+  if (client?.state)   { pdf.text("State Name : " + client.state + (client.stateCode?",  Code : "+client.stateCode:""), ML+2, by); }
+
+  // right: terms of delivery
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  pdf.text("Terms of Delivery", rx2+2, y+3);
+
+  y += buyerH;
+
+  // ── ITEMS TABLE HEADER ────────────────────────────────────────────────────
+  // Columns: SI | Description | HSN/SAC | Qty | Rate | per | Disc.% | Amount
+  const cols = {
+    si:   { x: ML,       w: 8   },
+    desc: { x: ML+8,     w: 68  },
+    hsn:  { x: ML+76,    w: 22  },
+    qty:  { x: ML+98,    w: 18  },
+    rate: { x: ML+116,   w: 22  },
+    per:  { x: ML+138,   w: 12  },
+    disc: { x: ML+150,   w: 14  },
+    amt:  { x: ML+164,   w: CW-164 },
+  };
+
+  const thH = 10;
+  // header bg
+  pdf.setFillColor(240,240,240);
+  pdf.rect(ML, y, CW, thH, "F");
+  box(pdf, ML, y, CW, thH);
+
+  // vertical dividers in header
+  Object.values(cols).forEach(c => {
+    vLine(pdf, c.x, y, y + thH);
+  });
+  vLine(pdf, RX, y, y + thH);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7.5);
+  const hdrs = ["SI\nNo", "Description of Goods", "HSN/SAC", "Quantity", "Rate", "per", "Disc.%", "Amount"];
+  const cKeys = Object.keys(cols);
+  hdrs.forEach((h, i) => {
+    const c = cols[cKeys[i]];
+    const lines = h.split("\n");
+    const tx = c.x + c.w / 2;
+    lines.forEach((l, li) => pdf.text(l, tx, y + 4 + li * 3.5, { align:"center" }));
+  });
+
+  y += thH;
+
+  // ── ITEM ROWS ─────────────────────────────────────────────────────────────
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(8);
 
   rows.forEach((row, idx) => {
-    const qty = row.qty === "" || row.qty === undefined ? 1 : parseFloat(row.qty) || 1;
-    const rate = parseFloat(row.rate) || 0;
+    const qty    = row.qty===""||row.qty===undefined ? 1 : parseFloat(row.qty)||1;
+    const rate   = parseFloat(row.rate)||0;
     const amount = qty * rate;
-    const gstAmt = (amount * gstPct) / 100;
-    const gst1 = isIGST ? gstAmt : gstAmt / 2;
-    const gst2 = isIGST ? 0 : gstAmt / 2;
-    const total = amount + gstAmt;
+    const rowH   = 10;
 
-    subtotal += amount;
-    tGST1 += gst1;
-    tGST2 += gst2;
+    // row border
+    box(pdf, ML, y, CW, rowH);
+    Object.values(cols).forEach(c => vLine(pdf, c.x, y, y + rowH));
+    vLine(pdf, RX, y, y + rowH);
 
-    const particularsLines = splitText(pdf, row.particulars || "-", 76);
-    const rowH = Math.max(6, particularsLines.length * 4.5);
+    pdf.setFont("helvetica","normal"); pdf.setFontSize(8);
+    pdf.text(String(idx+1),    cols.si.x   + cols.si.w/2,   y+6, { align:"center" });
+    const dl = splitText(pdf, row.particulars||"", cols.desc.w-2);
+    pdf.text(dl,               cols.desc.x + 1.5,            y+5);
+    pdf.text(row.hsnCode||"",  cols.hsn.x  + cols.hsn.w/2,  y+6, { align:"center" });
+    pdf.text(f2(qty),          cols.qty.x  + cols.qty.w-1.5, y+6, { align:"right" });
+    pdf.text(f2(rate),         cols.rate.x + cols.rate.w-1.5,y+6, { align:"right" });
+    pdf.text("Nos",            cols.per.x  + cols.per.w/2,   y+6, { align:"center" });
+    pdf.text("",               cols.disc.x + cols.disc.w/2,  y+6, { align:"center" });
+    pdf.text(fN(amount),       cols.amt.x  + cols.amt.w-1.5, y+6, { align:"right" });
 
-    pdf.text(String(idx + 1), C.no + 1, y);
-    pdf.text(particularsLines, C.part, y);
-    pdf.text(f2(qty), C.qty, y, { align: "right" });
-    pdf.text(f2(rate), C.rate, y, { align: "right" });
-    pdf.text(f2(amount), C.amt, y, { align: "right" });
-
-    if (isIGST) {
-      pdf.text(gstPct + "%", C.igstPct, y, { align: "right" });
-      pdf.text(f2(gst1), C.igstAmt, y, { align: "right" });
-    } else {
-      pdf.text(gstPct / 2 + "%", C.cgstPct, y, { align: "right" });
-      pdf.text(f2(gst1), C.cgstAmt, y, { align: "right" });
-      pdf.text(gstPct / 2 + "%", C.sgstPct, y, { align: "right" });
-      pdf.text(f2(gst2), C.sgstAmt, y, { align: "right" });
-    }
-    pdf.text(f2(total), C.tot, y, { align: "right" });
-
-    pdf.setDrawColor(0, 0, 0);
-    pdf.line(ML, y + rowH - 3, RX, y + rowH - 3);
     y += rowH;
   });
 
-  y += 2;
-  hr(y);
-  y += 6;
+  // ── GST ROWS inside the table ─────────────────────────────────────────────
+  const gstRowH = 8;
 
-  const grandTotal = subtotal + tGST1 + tGST2;
-  const LX = 132;
+  if (!isIGST) {
+    // CGST row
+    box(pdf, ML, y, CW, gstRowH);
+    Object.values(cols).forEach(c => vLine(pdf, c.x, y, y + gstRowH));
+    vLine(pdf, RX, y, y + gstRowH);
+    pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+    pdf.text("CGST", cols.desc.x + cols.desc.w/2, y+5, { align:"center" });
+    pdf.text(fN(cgst), cols.amt.x + cols.amt.w-1.5, y+5, { align:"right" });
+    y += gstRowH;
 
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(9);
+    // SGST row
+    box(pdf, ML, y, CW, gstRowH);
+    Object.values(cols).forEach(c => vLine(pdf, c.x, y, y + gstRowH));
+    vLine(pdf, RX, y, y + gstRowH);
+    pdf.text("SGST", cols.desc.x + cols.desc.w/2, y+5, { align:"center" });
+    pdf.text(fN(sgst), cols.amt.x + cols.amt.w-1.5, y+5, { align:"right" });
+    y += gstRowH;
+  } else {
+    // IGST row
+    box(pdf, ML, y, CW, gstRowH);
+    Object.values(cols).forEach(c => vLine(pdf, c.x, y, y + gstRowH));
+    vLine(pdf, RX, y, y + gstRowH);
+    pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+    pdf.text("IGST", cols.desc.x + cols.desc.w/2, y+5, { align:"center" });
+    pdf.text(fN(igst), cols.amt.x + cols.amt.w-1.5, y+5, { align:"right" });
+    y += gstRowH;
+  }
 
-  const totalRows = [
-    ["Subtotal", subtotal],
-    isIGST ? ["IGST (" + gstPct + "%)", tGST1] : ["CGST (" + gstPct / 2 + "%)", tGST1],
-    ...(!isIGST ? [["SGST (" + gstPct / 2 + "%)", tGST2]] : []),
-  ];
+  // ── TOTAL ROW ─────────────────────────────────────────────────────────────
+  const totRowH = 9;
+  box(pdf, ML, y, CW, totRowH);
+  Object.values(cols).forEach(c => vLine(pdf, c.x, y, y + totRowH));
+  vLine(pdf, RX, y, y + totRowH);
 
-  totalRows.forEach(([label, val]) => {
-    pdf.text(label + ":", LX, y, { align: "right" });
-    rt(Rs(val), y);
-    y += 5;
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8.5);
+  pdf.text("Total", cols.desc.x + 2, y+6);
+  // qty total
+  const totalQty = rows.reduce((s,r) => s + (r.qty===""||r.qty===undefined?1:parseFloat(r.qty)||1), 0);
+  pdf.text(f2(totalQty)+" Nos", cols.qty.x + cols.qty.w-1.5, y+6, { align:"right" });
+  pdf.text("\u20B9 " + fN(grandTotal), cols.amt.x + cols.amt.w-1.5, y+6, { align:"right" });
+
+  y += totRowH + 2;
+
+  // ── AMOUNT IN WORDS ───────────────────────────────────────────────────────
+  box(pdf, ML, y, CW, 10);
+  hLine(pdf, ML, RX, y+5);
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7.5);
+  pdf.text("Amount Chargeable (in words)", ML+2, y+4);
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8.5);
+  pdf.text("Indian Rupee " + numberToWords(grandTotal).replace(" Rupees Only","") + " Only", ML+2, y+8.5);
+  pdf.setFont("helvetica","italic"); pdf.setFontSize(7.5);
+  pdf.text("E. & O.E", RX-2, y+8.5, { align:"right" });
+
+  y += 12;
+
+  // ── GST SUMMARY TABLE ─────────────────────────────────────────────────────
+  const gsH = 16;
+  box(pdf, ML, y, CW, gsH);
+
+  // columns: HSN/SAC | Taxable Value | Central Tax Rate | Central Tax Amt | State Tax Rate | State Tax Amt | Total
+  const gc = {
+    hsn:   { x: ML,       w: 22  },
+    tax:   { x: ML+22,    w: 28  },
+    cRate: { x: ML+50,    w: 18  },
+    cAmt:  { x: ML+68,    w: 26  },
+    sRate: { x: ML+94,    w: 18  },
+    sAmt:  { x: ML+112,   w: 26  },
+    tot:   { x: ML+138,   w: CW-138 },
+  };
+
+  // header row of GST table
+  hLine(pdf, ML, RX, y+8);
+  Object.values(gc).forEach(c => {
+    vLine(pdf, c.x, y, y+gsH);
   });
+  vLine(pdf, RX, y, y+gsH);
 
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(10.5);
-  pdf.text("Grand Total:", LX, y, { align: "right" });
-  rt(Rs(grandTotal), y);
-  y += 7;
+  // merged header cells for Central Tax / State Tax
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7);
+  pdf.text("HSN/SAC",       gc.hsn.x  + gc.hsn.w/2,               y+4, { align:"center" });
+  pdf.text("Taxable\nValue",gc.tax.x  + gc.tax.w/2,               y+3, { align:"center" });
+  pdf.text("Central Tax",   gc.cRate.x + (gc.cRate.w+gc.cAmt.w)/2, y+4, { align:"center" });
+  pdf.text("State Tax",     gc.sRate.x + (gc.sRate.w+gc.sAmt.w)/2, y+4, { align:"center" });
+  pdf.text("Total",         gc.tot.x  + gc.tot.w/2,               y+4, { align:"center" });
 
-  hr(y);
-  y += 6;
+  // sub-headers
+  pdf.text("Rate",   gc.cRate.x + gc.cRate.w/2, y+7, { align:"center" });
+  pdf.text("Amount", gc.cAmt.x  + gc.cAmt.w/2,  y+7, { align:"center" });
+  pdf.text("Rate",   gc.sRate.x + gc.sRate.w/2, y+7, { align:"center" });
+  pdf.text("Amount", gc.sAmt.x  + gc.sAmt.w/2,  y+7, { align:"center" });
+  pdf.text("Tax Amount", gc.tot.x + gc.tot.w/2, y+7, { align:"center" });
 
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(8.5);
-  pdf.text("Amount in Words:", ML, y);
-  pdf.setFont("helvetica", "italic");
-  pdf.setFontSize(8.5);
-  const wordLines = splitText(pdf, numberToWords(grandTotal), CW - 40);
-  pdf.text(wordLines, ML + 40, y);
-  y += wordLines.length * 4.5 + 5;
+  // data row
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(8);
+  const rowY = y + 12;
+  // group by HSN if available, else show single row
+  const hsnVal = rows[0]?.hsnCode || "";
+  pdf.text(hsnVal,          gc.hsn.x  + gc.hsn.w/2,  rowY, { align:"center" });
+  pdf.text(fN(subtotal),    gc.tax.x  + gc.tax.w-1.5, rowY, { align:"right" });
+  pdf.text((gstPct/2)+"%",  gc.cRate.x+ gc.cRate.w/2, rowY, { align:"center" });
+  pdf.text(fN(cgst),        gc.cAmt.x + gc.cAmt.w-1.5,rowY, { align:"right" });
+  pdf.text((gstPct/2)+"%",  gc.sRate.x+ gc.sRate.w/2, rowY, { align:"center" });
+  pdf.text(fN(sgst),        gc.sAmt.x + gc.sAmt.w-1.5,rowY, { align:"right" });
+  pdf.text(fN(cgst+sgst+igst), gc.tot.x+gc.tot.w-1.5, rowY, { align:"right" });
 
-  hr(y);
-  y += 6;
+  y += gsH;
 
-  pdf.setFont("helvetica", "bold");
-  pdf.setFontSize(8);
-  pdf.text("GST Summary", ML, y);
-  y += 4;
+  // total row of GST table
+  box(pdf, ML, y, CW, 8);
+  Object.values(gc).forEach(c => vLine(pdf, c.x, y, y+8));
+  vLine(pdf, RX, y, y+8);
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+  pdf.text("Total", gc.hsn.x+2, y+5.5);
+  pdf.text(fN(subtotal),   gc.tax.x  + gc.tax.w-1.5,  y+5.5, { align:"right" });
+  pdf.text(fN(cgst),       gc.cAmt.x + gc.cAmt.w-1.5, y+5.5, { align:"right" });
+  pdf.text(fN(sgst),       gc.sAmt.x + gc.sAmt.w-1.5, y+5.5, { align:"right" });
+  pdf.text(fN(cgst+sgst+igst), gc.tot.x+gc.tot.w-1.5, y+5.5, { align:"right" });
 
-  pdf.text("Taxable Amt", ML + 2, y);
-  pdf.text("Rate", ML + 40, y);
-  if (isIGST) {
-    pdf.text("IGST", ML + 60, y);
-  } else {
-    pdf.text("CGST", ML + 60, y);
-    pdf.text("SGST", ML + 80, y);
-  }
-  pdf.text("Total Tax", ML + 103, y, { align: "right" });
-  y += 5;
-
-  pdf.setFont("helvetica", "normal");
-  pdf.text(Rs(subtotal), ML + 2, y);
-  pdf.text(gstPct + "%", ML + 40, y);
-  if (isIGST) {
-    pdf.text(Rs(tGST1), ML + 60, y);
-  } else {
-    pdf.text(Rs(tGST1), ML + 60, y);
-    pdf.text(Rs(tGST2), ML + 80, y);
-  }
-  pdf.text(Rs(tGST1 + tGST2), ML + 103, y, { align: "right" });
   y += 10;
 
-  const sigY = Math.max(y + 8, 255);
-  pdf.setFont("helvetica", "normal");
-  pdf.setFontSize(8.5);
-  pdf.text("Received By:", ML, sigY);
-  pdf.text("For " + COMPANY.name, RX, sigY, { align: "right" });
-  pdf.line(ML, sigY + 12, ML + 55, sigY + 12);
-  pdf.line(RX - 55, sigY + 12, RX, sigY + 12);
-  pdf.setFontSize(7.5);
-  pdf.text("Signature", ML, sigY + 16);
-  pdf.text("Authorised Signatory", RX, sigY + 16, { align: "right" });
+  // ── TAX IN WORDS ──────────────────────────────────────────────────────────
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7.5);
+  pdf.text("Tax Amount (in words) :  Indian Rupee " + numberToWords(cgst+sgst+igst).replace(" Rupees Only","") + " Only", ML, y+4);
 
-  pdf.setFont("helvetica", "italic");
-  pdf.setFontSize(7);
-  pdf.text("This is a computer-generated invoice.", ML, 290);
-  rt("Subject to " + COMPANY.state + " jurisdiction.", 290);
+  y += 10;
+
+  // ── DECLARATION + SIGNATORY ───────────────────────────────────────────────
+  box(pdf, ML, y, CW, 28);
+  vLine(pdf, ML+halfW, y, y+28);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(7.5);
+  pdf.text("Declaration", ML+2, y+4);
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7);
+  const decl = "We declare that this invoice shows the actual price of the\ngoods described and that all particulars are true and correct.";
+  pdf.text(decl, ML+2, y+9);
+
+  pdf.setFont("helvetica","bold"); pdf.setFontSize(8);
+  pdf.text("for " + COMPANY.name, ML+halfW+2, y+4);
+  pdf.setFont("helvetica","normal"); pdf.setFontSize(7.5);
+  pdf.text("Authorised Signatory", ML+halfW+2, y+24);
+
+  y += 30;
+
+  // ── FOOTER ────────────────────────────────────────────────────────────────
+  pdf.setFont("helvetica","italic"); pdf.setFontSize(7.5);
+  pdf.text("This is a Computer Generated Invoice", PW/2, y+2, { align:"center" });
 }
 
+// ─── SCREEN COMPONENT ─────────────────────────────────────────────────────────
 export default function Invoice({ bill, onClose, onNewBill }) {
   const { billNumber, date, client, rows, gstType, gstRate } = bill;
 
+  const isIGST = gstType === "igst";
   const gstPct = parseFloat(gstRate) || 0;
-  const subtotal = rows.reduce((sum, row) => {
-    const qty = row.qty === "" || row.qty === undefined ? 1 : parseFloat(row.qty) || 1;
-    return sum + qty * (parseFloat(row.rate) || 0);
+
+  const subtotal = rows.reduce((s,r) => {
+    const qty = r.qty===""||r.qty===undefined?1:parseFloat(r.qty)||1;
+    return s + qty*(parseFloat(r.rate)||0);
   }, 0);
-  const gstAmount = (subtotal * gstPct) / 100;
-  const cgst = gstType === "cgst_sgst" ? gstAmount / 2 : 0;
-  const sgst = gstType === "cgst_sgst" ? gstAmount / 2 : 0;
-  const igst = gstType === "igst" ? gstAmount : 0;
-  const grandTotal = subtotal + gstAmount;
+  const gstAmt   = (subtotal * gstPct) / 100;
+  const cgst     = isIGST ? 0 : gstAmt/2;
+  const sgst     = isIGST ? 0 : gstAmt/2;
+  const igst     = isIGST ? gstAmt : 0;
+  const grandTotal = subtotal + gstAmt;
+  const fN = (n) => (parseFloat(n)||0).toLocaleString("en-IN",{minimumFractionDigits:2});
 
   const handleDownloadPDF = () => {
-    const pdf = new jsPDF("p", "mm", "a4");
+    const pdf = new jsPDF("p","mm","a4");
     drawInvoicePage(pdf, bill, "CLIENT COPY");
     pdf.addPage();
     drawInvoicePage(pdf, bill, "OFFICE COPY");
-    pdf.save("Invoice-" + billNumber + ".pdf");
+    pdf.save("Invoice-"+billNumber+".pdf");
+  };
+
+  const S = {
+    table: { width:"100%", borderCollapse:"collapse", fontSize:"10px" },
+    th:    { border:"1px solid #000", padding:"4px 5px", textAlign:"center", background:"#f0f0f0", fontWeight:"bold" },
+    td:    { border:"1px solid #000", padding:"3px 5px", fontSize:"10px" },
+    tdr:   { border:"1px solid #000", padding:"3px 5px", fontSize:"10px", textAlign:"right" },
+    tdc:   { border:"1px solid #000", padding:"3px 5px", fontSize:"10px", textAlign:"center" },
   };
 
   const InvoiceContent = ({ title }) => (
-    <div className="bg-white p-6 text-sm text-black">
-      <div className="mb-4 border-b border-black py-1 text-right text-xs font-bold tracking-widest">
-        {title}
-      </div>
+    <div style={{ width:"210mm", minHeight:"297mm", background:"#fff", color:"#000", fontFamily:"Arial,sans-serif", fontSize:"10px", padding:"6mm 8mm", boxSizing:"border-box", border:"1px solid #000" }}>
 
-      <div className="mb-4 flex flex-col justify-between gap-4 sm:flex-row">
-        <div>
-          <div className="text-xl font-bold">{COMPANY.name}</div>
-          <div className="mt-1 text-xs leading-5">
-            {COMPANY.address}, {COMPANY.city}
-            <br />
-            GSTIN: {COMPANY.gstin} | State: {COMPANY.state} ({COMPANY.stateCode})
-            <br />
-            Ph: {COMPANY.phone} | {COMPANY.email}
-          </div>
+      {/* title row */}
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"4px" }}>
+        <div style={{ width:"60px" }}></div>
+        <div style={{ textAlign:"center" }}>
+          <div style={{ fontWeight:"bold", fontSize:"14px" }}>Tax Invoice</div>
+          <div style={{ fontSize:"9px", color:"#555" }}>({title})</div>
         </div>
-
-        <div className="text-left sm:text-right">
-          <div className="text-base font-bold">TAX INVOICE</div>
-          <div className="mt-1 text-xs leading-5">
-            Invoice No: <strong>{billNumber}</strong>
-            <br />
-            Date: <strong>{date}</strong>
-          </div>
-        </div>
+        <div style={{ fontWeight:"bold", fontSize:"10px" }}>e-Invoice</div>
       </div>
 
-      <hr className="mb-3 border-black" />
+      {/* supplier + invoice meta */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <tbody>
+          <tr>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+              <div style={{ fontWeight:"bold", fontSize:"12px" }}>{COMPANY.name}</div>
+              <div style={{ fontSize:"9px", lineHeight:"1.6", marginTop:"2px" }}>
+                {COMPANY.address}<br/>
+                {COMPANY.city}<br/>
+                GSTIN/UIN : {COMPANY.gstin}<br/>
+                State Name : {COMPANY.state},&nbsp; Code : {COMPANY.stateCode}
+              </div>
+            </td>
+            <td style={{ ...S.td, width:"50%", padding:"0", verticalAlign:"top" }}>
+              <table style={{ ...S.table, height:"100%" }}>
+                <tbody>
+                  <tr>
+                    <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+                      <div style={{ fontSize:"8px", color:"#555" }}>Invoice No.</div>
+                      <div style={{ fontWeight:"bold" }}>{billNumber}</div>
+                    </td>
+                    <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+                      <div style={{ fontSize:"8px", color:"#555" }}>Dated</div>
+                      <div style={{ fontWeight:"bold" }}>{date}</div>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td style={S.td}><span style={{ fontSize:"8px", color:"#555" }}>Delivery Note</span></td>
+                    <td style={S.td}><span style={{ fontSize:"8px", color:"#555" }}>Mode/Terms of Payment</span></td>
+                  </tr>
+                  <tr>
+                    <td style={S.td}><span style={{ fontSize:"8px", color:"#555" }}>Reference No. & Date.</span></td>
+                    <td style={S.td}><span style={{ fontSize:"8px", color:"#555" }}>Other References</span></td>
+                  </tr>
+                </tbody>
+              </table>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      <div className="mb-4 border border-black p-3 text-xs leading-5">
-        <div className="mb-1 text-xs font-bold uppercase">Bill To</div>
-        <div className="text-sm font-bold">{client?.company || client?.name || "Walk-in Customer"}</div>
-        {client?.name && client?.company && client.name !== client.company && <div>{client.name}</div>}
-        {client?.gstin && <div>GSTIN: <strong>{client.gstin}</strong></div>}
-        {client?.address && <div>{[client.address, client.city, client.state].filter(Boolean).join(", ")}</div>}
-        {client?.phone && <div>Ph: {client.phone}</div>}
-      </div>
+      {/* consignee + dispatch */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <tbody>
+          <tr>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+              <div style={{ fontSize:"8px", color:"#555", marginBottom:"2px" }}>Consignee (Ship to)</div>
+              <div style={{ fontWeight:"bold", fontSize:"11px" }}>{client?.company||client?.name||"Walk-in Customer"}</div>
+              <div style={{ fontSize:"9px", lineHeight:"1.6" }}>
+                {client?.address && <>{client.address}<br/></>}
+                {client?.gstin   && <>GSTIN/UIN : {client.gstin}<br/></>}
+                {client?.state   && <>State Name : {client.state}{client.stateCode?",  Code : "+client.stateCode:""}</>}
+              </div>
+            </td>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top", fontSize:"9px", color:"#555", lineHeight:"2" }}>
+              <div>Buyer's Order No.</div>
+              <div>Dated</div>
+              <div>Dispatch Doc No.</div>
+              <div>Delivery Note Date</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      <div className="overflow-x-auto">
-        <table className="w-full border border-black text-xs" style={{ minWidth: "560px" }}>
-          <thead>
+      {/* buyer */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <tbody>
+          <tr>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+              <div style={{ fontSize:"8px", color:"#555", marginBottom:"2px" }}>Buyer (Bill to)</div>
+              <div style={{ fontWeight:"bold", fontSize:"11px" }}>{client?.company||client?.name||"Walk-in Customer"}</div>
+              <div style={{ fontSize:"9px", lineHeight:"1.6" }}>
+                {client?.address && <>{client.address}<br/></>}
+                {client?.gstin   && <>GSTIN/UIN : {client.gstin}<br/></>}
+                {client?.state   && <>State Name : {client.state}{client.stateCode?",  Code : "+client.stateCode:""}</>}
+              </div>
+            </td>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top", fontSize:"9px", color:"#555" }}>
+              <div>Terms of Delivery</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* items table */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <thead>
+          <tr>
+            <th style={{ ...S.th, width:"24px" }}>SI<br/>No</th>
+            <th style={S.th}>Description of Goods</th>
+            <th style={{ ...S.th, width:"50px" }}>HSN/SAC</th>
+            <th style={{ ...S.th, width:"50px" }}>Quantity</th>
+            <th style={{ ...S.th, width:"55px" }}>Rate</th>
+            <th style={{ ...S.th, width:"28px" }}>per</th>
+            <th style={{ ...S.th, width:"32px" }}>Disc.%</th>
+            <th style={{ ...S.th, width:"60px" }}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row,i) => {
+            const qty = row.qty===""||row.qty===undefined?1:parseFloat(row.qty)||1;
+            const rate = parseFloat(row.rate)||0;
+            const amount = qty*rate;
+            return (
+              <tr key={i}>
+                <td style={S.tdc}>{i+1}</td>
+                <td style={S.td}>{row.particulars||"—"}</td>
+                <td style={S.tdc}>{row.hsnCode||""}</td>
+                <td style={S.tdr}>{f2(qty)} Nos</td>
+                <td style={S.tdr}>{f2(rate)}</td>
+                <td style={S.tdc}>Nos</td>
+                <td style={S.tdc}></td>
+                <td style={S.tdr}>{fN(amount)}</td>
+              </tr>
+            );
+          })}
+
+          {/* GST rows inside table */}
+          {!isIGST && <>
             <tr>
-              <th className="w-6 border border-black px-2 py-1.5 text-left">#</th>
-              <th className="border border-black px-2 py-1.5 text-left">Particulars</th>
-              <th className="w-14 border border-black px-2 py-1.5 text-right">Qty</th>
-              <th className="w-18 border border-black px-2 py-1.5 text-right">Rate</th>
-              <th className="w-20 border border-black px-2 py-1.5 text-right">Amount</th>
-              {gstType === "igst" && (
-                <>
-                  <th className="w-14 border border-black px-2 py-1.5 text-right">IGST%</th>
-                  <th className="w-18 border border-black px-2 py-1.5 text-right">IGST</th>
-                </>
-              )}
-              {gstType === "cgst_sgst" && (
-                <>
-                  <th className="w-14 border border-black px-2 py-1.5 text-right">CGST%</th>
-                  <th className="w-18 border border-black px-2 py-1.5 text-right">CGST</th>
-                  <th className="w-14 border border-black px-2 py-1.5 text-right">SGST%</th>
-                  <th className="w-18 border border-black px-2 py-1.5 text-right">SGST</th>
-                </>
-              )}
-              <th className="w-20 border border-black px-2 py-1.5 text-right">Total</th>
+              <td style={S.td} colSpan={7}>
+                <div style={{ textAlign:"center", fontWeight:"bold" }}>CGST</div>
+              </td>
+              <td style={{ ...S.tdr, fontWeight:"bold" }}>{fN(cgst)}</td>
             </tr>
-          </thead>
+            <tr>
+              <td style={S.td} colSpan={7}>
+                <div style={{ textAlign:"center", fontWeight:"bold" }}>SGST</div>
+              </td>
+              <td style={{ ...S.tdr, fontWeight:"bold" }}>{fN(sgst)}</td>
+            </tr>
+          </>}
+          {isIGST &&
+            <tr>
+              <td style={S.td} colSpan={7}>
+                <div style={{ textAlign:"center", fontWeight:"bold" }}>IGST</div>
+              </td>
+              <td style={{ ...S.tdr, fontWeight:"bold" }}>{fN(igst)}</td>
+            </tr>
+          }
 
-          <tbody>
-            {rows.map((row, i) => {
-              const qty = row.qty === "" || row.qty === undefined ? 1 : parseFloat(row.qty) || 1;
-              const rate = parseFloat(row.rate) || 0;
-              const amount = qty * rate;
-              const gstA = (amount * gstPct) / 100;
-              const rCGST = gstType === "cgst_sgst" ? gstA / 2 : 0;
-              const rSGST = gstType === "cgst_sgst" ? gstA / 2 : 0;
-              const rIGST = gstType === "igst" ? gstA : 0;
+          {/* total row */}
+          <tr style={{ fontWeight:"bold" }}>
+            <td style={S.td} colSpan={3}><strong>Total</strong></td>
+            <td style={S.tdr}>
+              {f2(rows.reduce((s,r)=>s+(r.qty===""||r.qty===undefined?1:parseFloat(r.qty)||1),0))} Nos
+            </td>
+            <td style={S.td} colSpan={3}></td>
+            <td style={{ ...S.tdr, fontSize:"11px" }}>₹ {fN(grandTotal)}</td>
+          </tr>
+        </tbody>
+      </table>
 
-              return (
-                <tr key={i}>
-                  <td className="border border-black px-2 py-1.5 text-center">{i + 1}</td>
-                  <td className="border border-black px-2 py-1.5">{row.particulars || "-"}</td>
-                  <td className="border border-black px-2 py-1.5 text-right">{qty}</td>
-                  <td className="border border-black px-2 py-1.5 text-right">{rate.toFixed(2)}</td>
-                  <td className="border border-black px-2 py-1.5 text-right">{amount.toFixed(2)}</td>
-                  {gstType === "igst" && (
-                    <>
-                      <td className="border border-black px-2 py-1.5 text-right">{gstPct}%</td>
-                      <td className="border border-black px-2 py-1.5 text-right">{rIGST.toFixed(2)}</td>
-                    </>
-                  )}
-                  {gstType === "cgst_sgst" && (
-                    <>
-                      <td className="border border-black px-2 py-1.5 text-right">{gstPct / 2}%</td>
-                      <td className="border border-black px-2 py-1.5 text-right">{rCGST.toFixed(2)}</td>
-                      <td className="border border-black px-2 py-1.5 text-right">{gstPct / 2}%</td>
-                      <td className="border border-black px-2 py-1.5 text-right">{rSGST.toFixed(2)}</td>
-                    </>
-                  )}
-                  <td className="border border-black px-2 py-1.5 text-right font-semibold">
-                    {(amount + gstA).toFixed(2)}
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
-      </div>
-
-      <div className="mt-4 flex justify-end">
-        <div className="w-52 space-y-1 text-xs">
-          <div className="flex justify-between">
-            <span>Subtotal:</span>
-            <span>Rs{subtotal.toFixed(2)}</span>
-          </div>
-          {gstType === "cgst_sgst" && (
-            <>
-              <div className="flex justify-between">
-                <span>CGST ({gstPct / 2}%):</span>
-                <span>Rs{cgst.toFixed(2)}</span>
+      {/* amount in words */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <tbody>
+          <tr>
+            <td style={S.td}>
+              <div style={{ fontSize:"8px", color:"#555" }}>Amount Chargeable (in words)</div>
+              <div style={{ fontWeight:"bold", fontSize:"9px" }}>
+                Indian Rupee {numberToWords(grandTotal).replace(" Rupees Only","")} Only
               </div>
-              <div className="flex justify-between">
-                <span>SGST ({gstPct / 2}%):</span>
-                <span>Rs{sgst.toFixed(2)}</span>
+            </td>
+            <td style={{ ...S.tdr, fontSize:"9px", fontStyle:"italic", width:"60px" }}>E. &amp; O.E</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* gst summary */}
+      <table style={{ ...S.table, marginBottom:"0" }}>
+        <thead>
+          <tr>
+            <th style={{ ...S.th, width:"55px" }} rowSpan={2}>HSN/SAC</th>
+            <th style={{ ...S.th, width:"65px" }} rowSpan={2}>Taxable<br/>Value</th>
+            <th style={{ ...S.th }} colSpan={2}>Central Tax</th>
+            <th style={{ ...S.th }} colSpan={2}>State Tax</th>
+            <th style={{ ...S.th, width:"60px" }} rowSpan={2}>Total<br/>Tax Amount</th>
+          </tr>
+          <tr>
+            <th style={S.th}>Rate</th>
+            <th style={S.th}>Amount</th>
+            <th style={S.th}>Rate</th>
+            <th style={S.th}>Amount</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td style={S.tdc}>{rows[0]?.hsnCode||""}</td>
+            <td style={S.tdr}>{fN(subtotal)}</td>
+            <td style={S.tdc}>{gstPct/2}%</td>
+            <td style={S.tdr}>{fN(cgst)}</td>
+            <td style={S.tdc}>{gstPct/2}%</td>
+            <td style={S.tdr}>{fN(sgst)}</td>
+            <td style={S.tdr}>{fN(cgst+sgst+igst)}</td>
+          </tr>
+          <tr style={{ fontWeight:"bold" }}>
+            <td style={S.td}>Total</td>
+            <td style={S.tdr}>{fN(subtotal)}</td>
+            <td style={S.td}></td>
+            <td style={S.tdr}>{fN(cgst)}</td>
+            <td style={S.td}></td>
+            <td style={S.tdr}>{fN(sgst)}</td>
+            <td style={S.tdr}>{fN(cgst+sgst+igst)}</td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* tax in words */}
+      <table style={{ ...S.table, marginBottom:"4px" }}>
+        <tbody>
+          <tr>
+            <td style={S.td}>
+              <span style={{ fontWeight:"bold" }}>Tax Amount (in words) : </span>
+              <span style={{ fontWeight:"bold" }}>Indian Rupee {numberToWords(cgst+sgst+igst).replace(" Rupees Only","")} Only</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {/* declaration + signatory */}
+      <table style={S.table}>
+        <tbody>
+          <tr>
+            <td style={{ ...S.td, width:"50%", verticalAlign:"top" }}>
+              <div style={{ fontWeight:"bold", marginBottom:"3px" }}>Declaration</div>
+              <div style={{ fontSize:"9px" }}>
+                We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.
               </div>
-            </>
-          )}
-          {gstType === "igst" && (
-            <div className="flex justify-between">
-              <span>IGST ({gstPct}%):</span>
-              <span>Rs{igst.toFixed(2)}</span>
-            </div>
-          )}
-          <div className="flex justify-between border-t border-black pt-2 text-sm font-bold">
-            <span>Grand Total:</span>
-            <span>Rs{grandTotal.toFixed(2)}</span>
-          </div>
-        </div>
-      </div>
+            </td>
+            <td style={{ ...S.td, width:"50%", textAlign:"right", verticalAlign:"bottom", height:"50px" }}>
+              <div style={{ marginBottom:"2px" }}>for {COMPANY.name}</div>
+              <div style={{ fontSize:"9px", color:"#555" }}>Authorised Signatory</div>
+            </td>
+          </tr>
+        </tbody>
+      </table>
 
-      <div className="mt-3 border border-black px-3 py-2 text-xs">
-        <span className="font-bold">Amount in Words: </span>
-        <span className="italic">{numberToWords(grandTotal)}</span>
+      <div style={{ textAlign:"center", fontSize:"9px", fontStyle:"italic", marginTop:"6px" }}>
+        This is a Computer Generated Invoice
       </div>
-
-      <div className="mt-8 flex justify-between text-xs">
-        <div>
-          <div>Received By:</div>
-          <div className="mt-8 w-32 border-t border-black pt-1">Signature</div>
-        </div>
-        <div className="text-right">
-          <div>For {COMPANY.name}</div>
-          <div className="mt-8 ml-auto w-32 border-t border-black pt-1">Authorised Signatory</div>
-        </div>
-      </div>
-
-      <div className="mt-4 text-xs italic">This is a computer-generated invoice.</div>
     </div>
   );
 
   return (
-    <div className="fixed inset-0 z-50 overflow-y-auto bg-black/75">
-      <div className="min-h-screen px-3 py-6">
-        <div className="mx-auto mb-4 flex max-w-3xl flex-wrap items-center justify-between gap-2">
-          <div className="flex flex-wrap gap-2">
-            <button
-              onClick={handleDownloadPDF}
-              className="bg-orange-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-orange-700"
-            >
-              Download PDF
+    <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto">
+      <div className="py-6 px-4">
+        <div style={{ maxWidth:"210mm", margin:"0 auto 12px" }} className="flex flex-wrap gap-2 items-center justify-between">
+          <div className="flex gap-2">
+            <button onClick={handleDownloadPDF} className="bg-black text-white px-5 py-2 text-sm font-semibold hover:bg-gray-800">
+              ⬇ Download PDF
             </button>
-            <button
-              onClick={() => window.print()}
-              className="bg-gray-900 px-5 py-2.5 text-sm font-semibold text-white hover:bg-gray-700"
-            >
-              Print
+            <button onClick={() => window.print()} className="border border-white text-white px-5 py-2 text-sm font-semibold hover:bg-white hover:text-black">
+              🖨 Print
             </button>
             {onNewBill && (
-              <button
-                onClick={onNewBill}
-                className="border-2 border-white px-5 py-2.5 text-sm font-semibold text-white hover:bg-white hover:text-gray-900"
-              >
+              <button onClick={onNewBill} className="border border-white text-white px-5 py-2 text-sm font-semibold hover:bg-white hover:text-black">
                 + New Bill
               </button>
             )}
           </div>
-          <button onClick={onClose} className="px-2 text-2xl text-gray-300 hover:text-white">
-            x
-          </button>
+          <button onClick={onClose} className="text-gray-300 hover:text-white text-2xl px-2">✕</button>
         </div>
 
-        <div id="print-area" className="mx-auto max-w-3xl space-y-3">
-          <div className="shadow-2xl">
-            <InvoiceContent title="CLIENT COPY" />
-          </div>
-          <div className="no-print py-1 text-center font-mono text-xs text-gray-500">cut here</div>
-          <div className="shadow-2xl">
-            <InvoiceContent title="OFFICE COPY" />
-          </div>
+        <div id="print-area" style={{ maxWidth:"210mm", margin:"0 auto" }} className="space-y-4">
+          <InvoiceContent title="CLIENT COPY" />
+          <div className="no-print text-center text-gray-400 text-xs font-mono py-1">✂ ── cut here ──</div>
+          <InvoiceContent title="OFFICE COPY" />
         </div>
       </div>
     </div>

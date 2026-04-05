@@ -8,11 +8,11 @@
  */
 
 export const COMPANY = {
-  name:      "PC Labels",
-  address:   "Z-32, Okhla Industrial Area, Okhla Phase 2",
-  city:      "New Delhi - 110020",
-  phone:     "+91-8920767545",
-  email:     "pclabels98@gmail.com",
+  name:      "Sharma Enterprises",
+  address:   "Shop No. 12, Industrial Area, Phase 2",
+  city:      "New Delhi - 110001",
+  phone:     "+91 98765 43210",
+  email:     "billing@sharmaenterprises.in",
   gstin:     "07AABCS1429B1Z1",
   state:     "Delhi",
   stateCode: "07",

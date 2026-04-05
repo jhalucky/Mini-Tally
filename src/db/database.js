@@ -1,30 +1,13 @@
 /**
  * database.js
  * -----------
- * IndexedDB wrapper for persistent client/company storage.
+ * Two storage mechanisms:
  *
- * WHY IndexedDB instead of localStorage?
- *   - localStorage is limited to ~5MB, strings only, no querying.
- *   - IndexedDB is a real browser database: structured, indexed,
- *     survives browser restarts, never auto-cleared.
- *
- * CLIENT SCHEMA:
- *   {
- *     id        : auto-increment (number)
- *     name      : string  — person or company name
- *     company   : string  — company/firm name
- *     gstin     : string  — 15-char GST number
- *     address   : string  — street address
- *     city      : string
- *     state     : string  — state name
- *     stateCode : string  — 2-digit state code (e.g. "07" for Delhi)
- *     phone     : string
- *     email     : string
- *   }
- *
- * NOTE: HSN code is NOT stored per client. It is a product-level field
- *       entered per line item on each invoice row.
+ * 1. CLIENTS → IndexedDB (async, structured, survives refresh)
+ * 2. PRODUCTS → localStorage (sync, simple list, fast reads in InvoiceForm)
  */
+
+// ─── INDEXEDDB: CLIENTS ───────────────────────────────────────────────────────
 
 const DB_NAME    = 'GSTBillingDB';
 const DB_VERSION = 1;
@@ -86,44 +69,34 @@ export async function getAllClients() {
   });
 }
 
-export async function searchClients(query) {
-  const all = await getAllClients();
-  const q   = query.toLowerCase();
-  return all.filter(c =>
-    c.name?.toLowerCase().includes(q)    ||
-    c.company?.toLowerCase().includes(q) ||
-    c.gstin?.toLowerCase().includes(q)
-  );
+// ─── LOCALSTORAGE: PRODUCTS ───────────────────────────────────────────────────
+
+const PRODUCTS_KEY = 'gst_products';
+
+export function getProducts() {
+  try {
+    return JSON.parse(localStorage.getItem(PRODUCTS_KEY)) || [];
+  } catch {
+    return [];
+  }
 }
 
-// export const getProducts = () => {
-//   return JSON.parse(localStorage.getItem("products")) || [];
-// };
+export function saveProduct(product) {
+  const list = getProducts();
+  list.push(product);
+  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(list));
+}
 
-// export const saveProduct = (product) => {
-//   const existing = JSON.parse(localStorage.getItem("products")) || [];
-//   localStorage.setItem("products", JSON.stringify([...existing, product]));
-// };
+export function updateProduct(updated) {
+  const list = getProducts().map(p => p.id === updated.id ? updated : p);
+  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(list));
+}
 
-// db/database.js
+export function deleteProduct(id) {
+  const list = getProducts().filter(p => p.id !== id);
+  localStorage.setItem(PRODUCTS_KEY, JSON.stringify(list));
+}
 
-export const getProducts = () => {
-  return JSON.parse(localStorage.getItem("products")) || [];
-};
-
-export const saveProduct = (product) => {
-  const products = getProducts();
-  localStorage.setItem("products", JSON.stringify([...products, product]));
-};
-
-export const updateProduct = (updated) => {
-  const products = getProducts().map(p =>
-    p.id === updated.id ? updated : p
-  );
-  localStorage.setItem("products", JSON.stringify(products));
-};
-
-export const deleteProduct = (id) => {
-  const products = getProducts().filter(p => p.id !== id);
-  localStorage.setItem("products", JSON.stringify(products));
-};
+export function clearAllProducts() {
+  localStorage.removeItem(PRODUCTS_KEY);
+}
