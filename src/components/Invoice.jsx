@@ -441,7 +441,7 @@ export default function Invoice({ bill, onClose, onNewBill }) {
   };
 
   const InvoiceContent = ({ title }) => (
-    <div style={{ width:"210mm", minHeight:"297mm", background:"#fff", color:"#000", fontFamily:"Arial,sans-serif", fontSize:"10px", padding:"6mm 8mm", boxSizing:"border-box", border:"1px solid #000" }}>
+    <div style={{ width:"794px", minHeight:"1123px", background:"#fff", color:"#000", fontFamily:"Arial,sans-serif", fontSize:"13px", padding:"22px 30px", boxSizing:"border-box", border:"1px solid #000" }}>
 
       {/* title row */}
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"4px" }}>
@@ -699,7 +699,7 @@ export default function Invoice({ bill, onClose, onNewBill }) {
   return (
     <div className="fixed inset-0 bg-black/80 z-50 overflow-y-auto">
       <div className="py-6 px-4">
-        <div style={{ maxWidth:"210mm", margin:"0 auto 12px" }} className="flex flex-wrap gap-2 items-center justify-between">
+        <div style={{ maxWidth:"794px", margin:"0 auto 12px" }} className="flex flex-wrap gap-2 items-center justify-between">
           <div className="flex gap-2">
             <button onClick={handleDownloadPDF} className="bg-black text-white px-5 py-2 text-sm font-semibold hover:bg-gray-800">
               ⬇ Download PDF
@@ -716,10 +716,18 @@ export default function Invoice({ bill, onClose, onNewBill }) {
           <button onClick={onClose} className="text-gray-300 hover:text-white text-2xl px-2">✕</button>
         </div>
 
-        <div id="print-area" style={{ maxWidth:"210mm", margin:"0 auto" }} className="space-y-4">
-          <InvoiceContent title="CLIENT COPY" />
+        <div id="print-area" className="space-y-4">
+          <div style={{ overflowX:"auto" }}>
+            <div style={{ width:"794px", margin:"0 auto" }}>
+              <InvoiceContent title="CLIENT COPY" />
+            </div>
+          </div>
           <div className="no-print text-center text-gray-400 text-xs font-mono py-1">✂ ── cut here ──</div>
-          <InvoiceContent title="OFFICE COPY" />
+          <div style={{ overflowX:"auto" }}>
+            <div style={{ width:"794px", margin:"0 auto" }}>
+              <InvoiceContent title="OFFICE COPY" />
+            </div>
+          </div>
         </div>
       </div>
     </div>
